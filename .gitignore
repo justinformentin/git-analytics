@@ -1,0 +1,29 @@
+node_modules/
+dist/
+.env
+.env.local
+*.env
+
+# Build outputs
+packages/frontend/dist/
+packages/server/dist/
+
+# Cache
+.cache/
+.vite/
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
