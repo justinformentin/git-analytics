@@ -42,6 +42,13 @@ export const authApi = {
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 };
 
+export interface SyncStatus {
+  status: 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
 // Repos
 export const reposApi = {
   list: () => request<any[]>('/api/repos'),
@@ -49,6 +56,7 @@ export const reposApi = {
   add: (data: any) => request('/api/repos', { method: 'POST', body: JSON.stringify(data) }),
   remove: (owner: string, repo: string) => request(`/api/repos/${owner}/${repo}`, { method: 'DELETE' }),
   sync: (owner: string, repo: string) => request(`/api/repos/${owner}/${repo}/sync`, { method: 'POST' }),
+  syncStatus: () => request<Record<string, SyncStatus>>('/api/repos/sync-status'),
   stats: (owner: string, repo: string) => request<any>(`/api/repos/${owner}/${repo}/stats`),
 };
 

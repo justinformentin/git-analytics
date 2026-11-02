@@ -141,6 +141,14 @@ CREATE TRIGGER update_users_updated_at
   FOR EACH ROW
   EXECUTE PROCEDURE update_updated_at_column();
 
+-- Grant table privileges to the service_role (backend uses the secret/service_role key).
+-- Supabase normally applies these by default; granting explicitly makes the migration self-contained.
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
 -- Row Level Security (RLS) policies
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repositories ENABLE ROW LEVEL SECURITY;

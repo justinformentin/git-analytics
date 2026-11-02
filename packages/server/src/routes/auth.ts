@@ -32,16 +32,20 @@ auth.get('/github/callback', async (c) => {
   }
 
   const clientId = process.env.GITHUB_CLIENT_ID!;
+  console.log('clientId', clientId);
   const clientSecret = process.env.GITHUB_CLIENT_SECRET!;
+  console.log('clientSecret', clientSecret);
+
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
   try {
     // Exchange code for access token
     const accessToken = await exchangeCodeForToken(clientId, clientSecret, code);
 
+    console.log('accessToken', accessToken);
     // Get user info from GitHub
     const githubUser = await getAuthenticatedUser(accessToken);
-
+    console.log('githubUser', githubUser);
     // Upsert user in database
     const { data: user, error } = await supabase
       .from('users')
@@ -56,6 +60,8 @@ auth.get('/github/callback', async (c) => {
       .select()
       .single();
 
+      console.log('user db', user);
+      console.log('error db', error);
     if (error || !user) {
       throw new HTTPException(500, { message: 'Failed to create user' });
     }

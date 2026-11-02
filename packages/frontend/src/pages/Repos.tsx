@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { reposApi } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { reposApi, type SyncStatus } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,12 +18,35 @@ export default function ReposPage() {
   const [search, setSearch] = useState('');
   const [searchGitHub, setSearchGitHub] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [syncingRepos, setSyncingRepos] = useState<Set<string>>(new Set());
 
   const { data: repos, isLoading } = useQuery({
     queryKey: ['repos'],
     queryFn: reposApi.list,
   });
+
+  // Server-truth sync status, keyed by repo id. Polls every 2s while any sync
+  // is running, then stops. This survives reloads and works across tabs.
+  const { data: syncStatus } = useQuery({
+    queryKey: ['repos-sync-status'],
+    queryFn: reposApi.syncStatus,
+    refetchInterval: (query) => {
+      const data = query.state.data as Record<string, SyncStatus> | undefined;
+      const anyRunning = data && Object.values(data).some(s => s.status === 'running');
+      return anyRunning ? 2000 : false;
+    },
+  });
+
+  // When a repo transitions out of 'running', refresh the repo list so the
+  // updated last_synced_at shows up.
+  const prevStatus = useRef<Record<string, SyncStatus>>({});
+  useEffect(() => {
+    const current = syncStatus || {};
+    const completed = Object.keys(prevStatus.current).some(
+      id => prevStatus.current[id]?.status === 'running' && current[id]?.status !== 'running'
+    );
+    if (completed) qc.invalidateQueries({ queryKey: ['repos'] });
+    prevStatus.current = current;
+  }, [syncStatus, qc]);
 
   const { data: githubRepos, isLoading: githubLoading } = useQuery({
     queryKey: ['repos-github'],
@@ -44,18 +67,24 @@ export default function ReposPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['repos'] }),
   });
 
-  const handleSync = async (owner: string, name: string, id: string) => {
-    setSyncingRepos(s => new Set([...s, id]));
-    try {
-      await reposApi.sync(owner, name);
-      setTimeout(() => {
-        setSyncingRepos(s => { const n = new Set(s); n.delete(id); return n; });
-        qc.invalidateQueries({ queryKey: ['repos'] });
-      }, 2000);
-    } catch {
-      setSyncingRepos(s => { const n = new Set(s); n.delete(id); return n; });
-    }
-  };
+  const syncMutation = useMutation({
+    mutationFn: ({ owner, name }: { owner: string; name: string; id: string }) =>
+      reposApi.sync(owner, name),
+    onMutate: ({ id }) => {
+      // Optimistically mark this repo as running so the button disables
+      // immediately, before the first poll comes back.
+      qc.setQueryData<Record<string, SyncStatus>>(['repos-sync-status'], (old) => ({
+        ...(old || {}),
+        [id]: {
+          status: 'running',
+          started_at: new Date().toISOString(),
+          completed_at: null,
+          error_message: null,
+        },
+      }));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['repos-sync-status'] }),
+  });
 
   const filteredGitHub = (githubRepos || []).filter((r: any) =>
     r.full_name.toLowerCase().includes(searchGitHub.toLowerCase())
@@ -128,8 +157,8 @@ export default function ReposPage() {
 
       {/* Repos grid */}
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-4">
-          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-44" />)}
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[14.5rem]" />)}
         </div>
       ) : (repos || []).length === 0 ? (
         <Card className="text-center py-12">
@@ -140,9 +169,9 @@ export default function ReposPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {(repos || []).map((repo: any) => {
-            const isSyncing = syncingRepos.has(repo.id);
+            const isSyncing = syncStatus?.[repo.id]?.status === 'running';
             return (
               <Card key={repo.id} className="flex flex-col">
                 <CardHeader className="pb-3">
@@ -187,7 +216,7 @@ export default function ReposPage() {
                     size="sm"
                     className="w-full"
                     disabled={isSyncing}
-                    onClick={() => handleSync(repo.owner, repo.name, repo.id)}
+                    onClick={() => syncMutation.mutate({ owner: repo.owner, name: repo.name, id: repo.id })}
                   >
                     {isSyncing ? (
                       <><RefreshCw className="h-3 w-3 mr-2 animate-spin" />Syncing...</>

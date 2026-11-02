@@ -25,6 +25,40 @@ repos.get('/', async (c) => {
   return c.json(data || []);
 });
 
+// Latest sync status for all of the user's repos (keyed by repo id)
+repos.get('/sync-status', async (c) => {
+  const user = c.get('user');
+
+  const { data: userRepos } = await supabase
+    .from('repositories')
+    .select('id')
+    .eq('user_id', user.sub);
+
+  const repoIds = (userRepos || []).map(r => r.id);
+  if (repoIds.length === 0) return c.json({});
+
+  const { data: logs } = await supabase
+    .from('sync_log')
+    .select('repo_id, status, started_at, completed_at, error_message')
+    .in('repo_id', repoIds)
+    .order('started_at', { ascending: false });
+
+  // Reduce to the most recent sync_log row per repo
+  const latest: Record<string, unknown> = {};
+  for (const log of logs || []) {
+    if (!latest[log.repo_id]) {
+      latest[log.repo_id] = {
+        status: log.status,
+        started_at: log.started_at,
+        completed_at: log.completed_at,
+        error_message: log.error_message,
+      };
+    }
+  }
+
+  return c.json(latest);
+});
+
 // Search user's GitHub repos (for adding)
 repos.get('/search', async (c) => {
   const user = c.get('user');
@@ -110,6 +144,7 @@ repos.post('/:owner/:repo/sync', async (c) => {
     .eq('id', user.sub)
     .single();
 
+    console.log('dbUser', dbUser);
   if (!dbUser) throw new HTTPException(404, { message: 'User not found' });
 
   const { data: repository } = await supabase
@@ -120,6 +155,7 @@ repos.post('/:owner/:repo/sync', async (c) => {
     .eq('name', repoName)
     .single();
 
+    console.log('repository', repository);
   if (!repository) throw new HTTPException(404, { message: 'Repository not found' });
 
   // Run sync asynchronously
